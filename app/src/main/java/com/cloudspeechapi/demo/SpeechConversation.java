@@ -26,6 +26,9 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.hardware.Camera;
+import com.cloudspeechapi.demo.FaceDetect;
+
+import java.io.IOException;
 
 /*
  * Copyright (C) 2017 The Android Open Source Project
@@ -71,6 +74,8 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
     FrameLayout frameLayout;
     ShowCamera showCamera;
 
+    FaceDetect faceDetect;
+
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -81,12 +86,39 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
         setContentView(R.layout.speechlayout);
         initViews();
 
+        faceDetect = new FaceDetect();
+
         frameLayout = (FrameLayout)findViewById(R.id.frameLayout);
 
         camera = Camera.open();
 
         showCamera = new ShowCamera(this, camera);
         frameLayout.addView(showCamera);
+
+
+
+        captureImage((FrameLayout)findViewById(R.id.frameLayout));
+    }
+
+
+    Camera.PictureCallback mPictureCallback = new Camera.PictureCallback() {
+        @Override
+        public void onPictureTaken(byte[] data, Camera camera) {
+            try {
+                String s = faceDetect.postImage(data);
+
+                Log.d("Output", s);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+        }
+    };
+
+    public void captureImage(View v) {
+        if(camera!=null){
+            camera.takePicture(null,null, mPictureCallback);
+        }
     }
 
     @Override
@@ -121,6 +153,7 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
             unbindService(mServiceConnection);
             mCloudSpeechService = null;
         }
+
 
         super.onStop();
     }
