@@ -31,6 +31,9 @@ import android.widget.TextView;
 import android.hardware.Camera;
 import android.hardware.Camera.FaceDetectionListener;
 import android.hardware.Camera.Face;
+import android.graphics.Matrix;
+import android.hardware.Camera.CameraInfo;
+
 
 
 /*
@@ -129,11 +132,28 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
                 Log.d("bottomFace", Integer.toString(face.rect.bottom));
             }
 
+
+            Matrix matrix = new Matrix();
+            CameraInfo info = new CameraInfo();
+            camera.getCameraInfo(0, info);
+
+            // Need mirror for front camera.
+            boolean mirror = (info.facing == CameraInfo.CAMERA_FACING_FRONT);
+            matrix.setScale(mirror ? -1 : 1, 1);
+            // This is the value for android.hardware.Camera.setDisplayOrientation.
+            matrix.postRotate(90);
+            // Camera driver coordinates range from (-1000, -1000) to (1000, 1000).
+            // UI coordinates range from (0, 0) to (width, height).
+            matrix.postScale(getScreenWidth() / 2000f, getScreenHeight() / 2000f);
+            matrix.postTranslate(getScreenWidth() / 2f, getScreenHeight() / 2f);
+
             Point face_point = face.mouth;
 
 
             int face_x = face_point.x + 1000;
             int face_y = face_point.y + 1000;
+
+            double area = Math.log(face.rect.width()*face.rect.height());
 
             int s_width = getScreenWidth();
             int s_height = getScreenHeight();
@@ -147,6 +167,7 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
             if(y_pixel > s_height || s_pixel < 0) {
                 y_pixel = 200;
             }
+
 
 
             mUserSpeechText.setX(x_pixel);
