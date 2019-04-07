@@ -9,6 +9,7 @@ import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.graphics.Color;
+import android.graphics.Point;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -28,24 +29,11 @@ import android.widget.FrameLayout;
 import android.widget.Button;
 import android.widget.TextView;
 import android.hardware.Camera;
-
-/*
- * Copyright (C) 2017 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * Created by Sujit Panda on 8/26/2017.
- */
+import android.hardware.Camera.FaceDetectionListener;
+import android.hardware.Camera.Face;
+import android.graphics.Matrix;
+import android.graphics.RectF;
+import android.hardware.Camera.CameraInfo;
 
 
 public class SpeechConversation extends AppCompatActivity implements VoiceView.OnRecordListener {
@@ -54,7 +42,7 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
 
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 1;
 
-    private TextView mUserSpeechText, mSpeechRecogText, mUserTranslatedText;
+    private TextView mUserSpeechText, mSpeechRecogText;
     private VoiceView mStartStopBtn;
 
     private CloudSpeechService mCloudSpeechService;
@@ -72,7 +60,11 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
     Camera camera;
     FrameLayout frameLayout;
     ShowCamera showCamera;
-    
+
+
+    private Boolean started;
+    private int iterator;
+
     public static int getScreenWidth() {
         return Resources.getSystem().getDisplayMetrics().widthPixels;
     }
@@ -80,12 +72,13 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
     public static int getScreenHeight() {
         return Resources.getSystem().getDisplayMetrics().heightPixels;
     }
+
+
     public void moveTextPosition(View view) {
         Log.d("Screen Height", String.valueOf(getScreenHeight()));
         Log.d("Screen Width", String.valueOf(getScreenWidth()));
         mUserSpeechText.setX(50);
         mUserSpeechText.setY(100);
-        mUserSpeechText.setText("hhhhhhhhhhhhhhhhhhhhhhhhhh");
     }
 
 
@@ -104,7 +97,53 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
 
         showCamera = new ShowCamera(this, camera);
         frameLayout.addView(showCamera);
+
+
+        camera.setFaceDetectionListener(faceDetectionListener);
+        camera.startFaceDetection();
+
+        started = false;
     }
+
+
+    private FaceDetectionListener faceDetectionListener = new FaceDetectionListener() {
+        @Override
+        public void onFaceDetection(Face[] faces, Camera camera) {
+            Log.d("onFaceDetection", "Number of Faces:" + faces.length);
+            Face face = null;
+            if(faces.length >= 1) {
+                face = faces[0];
+            }
+
+            if(face != null) {
+                RectF position = new RectF();
+                position.set(face.rect);
+
+
+                Matrix matrix = new Matrix();
+                CameraInfo info = new CameraInfo();
+                camera.getCameraInfo(0, info);
+
+                // Need mirror for front camera.
+                boolean mirror = (info.facing == CameraInfo.CAMERA_FACING_FRONT);
+                matrix.setScale(mirror ? -1 : 1, 1);
+                // This is the value for android.hardware.Camera.setDisplayOrientation.
+                matrix.postRotate(90);
+                // Camera driver coordinates range from (-1000, -1000) to (1000, 1000).
+                // UI coordinates range from (0, 0) to (width, height).
+                matrix.postScale(getScreenWidth() / 2000f, getScreenHeight() / 2000f);
+                matrix.postTranslate(getScreenWidth() / 2f, getScreenHeight() / 2f);
+
+                matrix.mapRect(position);
+
+                mSpeechRecogText.setX(position.left - mSpeechRecogText.getWidth()/3);
+                mSpeechRecogText.setY(position.bottom + mSpeechRecogText.getHeight()/4);
+            }
+
+
+        }
+    };
+
 
     @Override
     public void onStart() {
@@ -127,6 +166,13 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
     }
 
     @Override
+    public void onDestroy() {
+        super.onDestroy();
+        camera.stopPreview();
+        camera.release();
+    }
+
+    @Override
     public void onStop() {
 
         // Stop listening to voice
@@ -144,13 +190,12 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
 
     private void initViews() {
 
-        mSavedText = "Hello";
+        mSavedText = "";
         mStartStopBtn = (VoiceView) findViewById(R.id.recordButton);
         mStartStopBtn.setOnRecordListener(this);
 
 
         mSpeechRecogText = (TextView) findViewById(R.id.speechRecogText);
-        mStatus = (TextView) findViewById(R.id.status);
 
         final Resources resources = getResources();
         final Resources.Theme theme = getTheme();
@@ -166,25 +211,21 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
         @Override
         public void onSpeechRecognized(final String text, final boolean isFinal) {
             if (isFinal) {
+                iterator = 0;
                 mVoiceRecorder.dismiss();
             }
-
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                        Log.d(TAG, "Final Response : " + text);
-
-                        try {
-                            // Google Translate Object
-                            GoogleTranslate googleTranslate = new GoogleTranslate();
-                            String translatedText = googleTranslate.execute(text, "en", "de").get();
-                            Log.d(TAG, "Final Translate Response: " + translatedText);
-                            mSpeechRecogText.setTextColor(Color.WHITE);
-                            mSpeechRecogText.setText(translatedText);
-                        }
-                        catch (Exception e){
-                            Log.d("Translated Text >>>>>>", e.toString());
-                    }
+                            try {
+                                // Google Translate Object
+                                GoogleTranslate googleTranslate = new GoogleTranslate();
+                                String translatedText = googleTranslate.execute(text, Configuration.FROM_LANG, Configuration.TO_LANG).get();
+                                mSpeechRecogText.setTextColor(Color.WHITE);
+                                mSpeechRecogText.setText(translatedText);
+                            } catch (Exception e) {
+                                Log.d("Translated Text >>>>>>", e.toString());
+                            }
                 }
             });
         }
@@ -196,7 +237,6 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
         public void onServiceConnected(ComponentName componentName, IBinder binder) {
             mCloudSpeechService = CloudSpeechService.from(binder);
             mCloudSpeechService.addListener(mCloudSpeechServiceListener);
-            mStatus.setVisibility(View.VISIBLE);
         }
 
         @Override
@@ -228,7 +268,6 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
                     int amplitude = (buffer[0] & 0xff) << 8 | buffer[1];
                     double amplitudeDb3 = 20 * Math.log10((double)Math.abs(amplitude) / 32768);
                     float radius2 = (float) Math.log10(Math.max(1, amplitudeDb3)) * dp2px(SpeechConversation.this, 20);
-                    Log.d("SUJIT","radius2 : " + radius2);
                     mStartStopBtn.animateRadius(radius2 * 10);
                 }
             });
@@ -256,18 +295,17 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
 
     private void startStopRecording() {
 
-        Log.d(TAG, "# startStopRecording # : " + mIsRecording);
         if (mIsRecording) {
             mStartStopBtn.changePlayButtonState(VoiceView.STATE_NORMAL);
             stopVoiceRecorder();
-        } else {
+        } else if (started) {
             mStartStopBtn.changePlayButtonState(VoiceView.STATE_RECORDING);
             startVoiceRecorder();
         }
+        started = true;
     }
 
     private void startVoiceRecorder() {
-        Log.d(TAG, "# startVoiceRecorder #");
         mIsRecording = true;
         if (mVoiceRecorder != null) {
             mVoiceRecorder.stop();
@@ -278,7 +316,6 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
 
     private void stopVoiceRecorder() {
 
-        Log.d(TAG, "# stopVoiceRecorder #");
         mIsRecording = false;
         if (mVoiceRecorder != null) {
             mVoiceRecorder.stop();
@@ -324,7 +361,7 @@ public class SpeechConversation extends AppCompatActivity implements VoiceView.O
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                mStatus.setTextColor(hearingVoice ? mColorHearing : mColorNotHearing);
+                // mStatus.setTextColor(hearingVoice ? mColorHearing : mColorNotHearing);
             }
         });
     }
